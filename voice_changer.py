@@ -13,19 +13,12 @@ from dotenv import load_dotenv
 # Parameters
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 44100
+RATE = 48000
 FRAMES_PER_BUFFER = 1024
 
 # ElevenLabs API setup
 API_KEY = None  # Initialize as None
 client = None   # Initialize as None
-
-# Remove or comment out this test block since it's too early
-# try:
-#     voices_list = client.voices.list()
-#     print("Successfully connected to ElevenLabs API")
-# except Exception as e:
-#     print(f"Error connecting to ElevenLabs API: {e}")
 
 # Voice dictionary
 voices = {
@@ -127,34 +120,38 @@ def display_current_settings():
     print("="*50)
 
 def list_audio_devices():
-    input_devices = {}
-    output_devices = {}
+    input_devices = []
+    output_devices = []
 
-    # Find the index for MME host API
-    mme_host_api_index = None
+    # Find WASAPI API index (Windows Audio Session API)
+    wasapi_api_index = None
     for i in range(p.get_host_api_count()):
-        host_api_info = p.get_host_api_info_by_index(i)
-        if host_api_info['name'].lower() == 'mme':
-            mme_host_api_index = i
+        api_info = p.get_host_api_info_by_index(i)
+        if api_info['name'] == 'Windows WASAPI':
+            wasapi_api_index = i
             break
 
-    if mme_host_api_index is None:
-        print("MME host API not found.")
-        return [], []
-
+    # List only WASAPI devices
     for i in range(p.get_device_count()):
-        device_info = p.get_device_info_by_index(i)
-        # Check if the device belongs to the MME host API
-        if device_info['hostApi'] == mme_host_api_index:
-            normalized_name = device_info['name'].strip().lower()
-            if device_info['maxInputChannels'] > 0 and normalized_name not in input_devices:
-                input_devices[normalized_name] = (i, device_info['name'])
-            if device_info['maxOutputChannels'] > 0 and normalized_name not in output_devices:
-                output_devices[normalized_name] = (i, device_info['name'])
+        try:
+            device_info = p.get_device_info_by_index(i)
+            
+            # Only include WASAPI devices
+            if device_info['hostApi'] == wasapi_api_index:
+                device_name = device_info['name']
+                
+                # Add input devices
+                if device_info['maxInputChannels'] > 0:
+                    input_devices.append((i, device_name))
+                
+                # Add output devices
+                if device_info['maxOutputChannels'] > 0:
+                    output_devices.append((i, device_name))
+                    
+        except Exception as e:
+            print(f"Error getting device {i} info: {e}")
 
-    print("Input Devices:", input_devices)
-    print("Output Devices:", output_devices)
-    return list(input_devices.values()), list(output_devices.values())
+    return input_devices, output_devices
 
 def select_input_device():
     global input_device_index
@@ -355,11 +352,21 @@ def process_audio(frames):
 def play_audio(response):
     temp_file = "temp_audio.mp3"
     try:
+        # Save the audio response to a temporary file
         with open(temp_file, 'wb') as f:
             for chunk in response:
                 f.write(chunk)
         update_status_display("Processing audio...", 
                             "Audio file prepared. Playing...")
+
+        # Reinitialize mixer with the correct output device
+        mixer.quit()  # First quit any existing mixer
+        if output_device_index is not None:
+            device_info = p.get_device_info_by_index(output_device_index)
+            print(f"Playing through device: {device_info['name']}")
+            mixer.init(frequency=48000, channels=1, devicename=device_info['name'])
+        else:
+            mixer.init(frequency=48000, channels=1)
 
         mixer.music.load(temp_file)
         mixer.music.play()
@@ -463,22 +470,24 @@ def start_voice_changer():
     recording = False
     frames = []
     
-    # Reinitialize PyAudio
-    p = pyaudio.PyAudio()
-
     try:
-        # Initialize pygame mixer with the specific output device
-        if output_device_index is None:
-            mixer.init()  # Use system default
-        else:
-            mixer.init(devicename=p.get_device_info_by_index(output_device_index)['name'])
-
+        # Get device info for debugging
+        if output_device_index is not None:
+            device_info = p.get_device_info_by_index(output_device_index)
+            print(f"\nOutput Device Info:")
+            print(f"Name: {device_info['name']}")
+            print(f"Default Sample Rate: {device_info['defaultSampleRate']}")
+            print(f"Max Output Channels: {device_info['maxOutputChannels']}")
+        
+        # Initialize pygame mixer with specific settings
+        mixer.init(frequency=48000, channels=1)
+        
         # Open input stream with system default if none specified
         input_stream = p.open(format=FORMAT,
                             channels=CHANNELS,
                             rate=RATE,
                             input=True,
-                            input_device_index=input_device_index,  # None will use system default
+                            input_device_index=input_device_index,
                             frames_per_buffer=FRAMES_PER_BUFFER)
 
         # Initialize mouse listener
@@ -516,31 +525,37 @@ def start_voice_changer():
             print("\nStopping voice changer...")
             stop_flag = True
 
-        # Wait for the audio thread to finish
-        audio_thread.join()
-
-        # Stop and close the streams
-        if input_stream.is_active():
-            input_stream.stop_stream()
-        input_stream.close()
-        p.terminate()
-        mouse_listener.stop()
-
-    except OSError as e:
-        print(f"Error initializing audio devices: {e}")
+    except Exception as e:
+        print(f"\nError initializing audio devices: {e}")
+        input("\nPress Enter to continue...")  # Pause to read error
     finally:
-        # Ensure resources are cleaned up even if an error occurs
+        # Cleanup
+        stop_flag = True
+        
         try:
-            if 'input_stream' in locals():
+            # Wait for the audio thread if it exists
+            if 'audio_thread' in locals() and audio_thread.is_alive():
+                audio_thread.join()
+            
+            # Close input stream
+            if 'input_stream' in locals() and input_stream is not None:
                 if input_stream.is_active():
                     input_stream.stop_stream()
                 input_stream.close()
-            mixer.quit()
-            p.terminate()
+            
+            # Stop mouse listener
             if 'mouse_listener' in locals():
                 mouse_listener.stop()
+            
+            # Quit mixer
+            mixer.quit()
         except Exception as e:
-            print(f"Error cleaning up resources: {e}")
+            print(f"\nError during cleanup: {e}")
+            input("\nPress Enter to continue...")  # Pause to read error
+        
+        print("\nVoice changer stopped.")
+        input("\nPress Enter to return to menu...")  # Pause before returning to menu
+        display_current_settings()
 
 if __name__ == "__main__":
     settings_menu()
