@@ -1,0 +1,5 @@
+elevenlabs
+pyaudio
+pynput
+pygame
+python-dotenv
