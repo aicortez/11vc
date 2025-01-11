@@ -23,7 +23,7 @@ A voice changer application using ElevenLabs' speech-to-speech technology. Recor
 1. Clone the repository:
    ```bash
    git clone https://github.com/aicortez/11vc.git
-   cd voice-changer
+   cd 11vc
    ```
 
 2. Install required packages:
