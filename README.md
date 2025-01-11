@@ -14,7 +14,7 @@ A voice changer application using ElevenLabs' speech-to-speech technology. Recor
 ## Prerequisites
 
 - Python 3.10 or higher
-- An ElevenLabs API key ([Get it here](https://elevenlabs.io/subscription))
+- An ElevenLabs API key ([Get it here](https://elevenlabs.io/app/settings/api-keys))
 - Microphone for audio input
 - Speakers/headphones for audio output
 
