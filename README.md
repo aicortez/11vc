@@ -22,7 +22,7 @@ A voice changer application using ElevenLabs' speech-to-speech technology. Recor
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/voice-changer.git
+   git clone https://github.com/aicortez/11vc.git
    cd voice-changer
    ```
 
@@ -72,7 +72,7 @@ The application provides several configuration options:
 ## Support
 
 If you encounter any issues or have questions:
-1. Check the [Issues](https://github.com/yourusername/voice-changer/issues) page
+1. Check the [Issues](https://github.com/aicortez/11vc/issues) page
 2. Create a new issue if needed
 3. Provide as much detail as possible about your problem
 
